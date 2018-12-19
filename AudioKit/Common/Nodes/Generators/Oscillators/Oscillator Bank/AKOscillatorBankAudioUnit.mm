@@ -61,6 +61,16 @@ standardBankFunctions()
     parameterTreeBlock(OscillatorBank)
 }
 
+- (void)setCutoffFrequency:(float)cutoffFrequency
+{
+  _kernel.cutoffFrequency = cutoffFrequency;
+}
+
+- (void)setCutoffIntensity:(float)cutoffIntensity
+{
+  _kernel.cutoffIntensity = cutoffIntensity;
+}
+
 AUAudioUnitGeneratorOverrides(OscillatorBank)
 
 

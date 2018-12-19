@@ -16,6 +16,9 @@ enum {
 
 class AKOscillatorBankDSPKernel : public AKBankDSPKernel, public AKOutputBuffered {
 public:
+    float cutoffFrequency = 22050.0f;
+    float cutoffIntensity = 1.0f;
+
     // MARK: Types
     struct NoteState {
         NoteState* next;
@@ -27,15 +30,27 @@ public:
 
         float internalGate = 0;
         float amp = 0;
+        float filter = 0;
 
         sp_adsr *adsr;
+        sp_adsr *fadsr;
+
         sp_osc *osc;
+
+        sp_crossfade *filterCrossFade;
+        sp_moogladder *lowPass;
 
         void init() {
             sp_adsr_create(&adsr);
+            sp_adsr_create(&fadsr);
             sp_osc_create(&osc);
+            sp_crossfade_create(&filterCrossFade);
+            sp_moogladder_create(&lowPass);
             sp_adsr_init(kernel->sp, adsr);
+            sp_adsr_init(kernel->sp, fadsr);
             sp_osc_init(kernel->sp, osc, kernel->ftbl, 0);
+            sp_crossfade_init(kernel->sp, filterCrossFade);
+            sp_moogladder_init(kernel->sp, lowPass);
             osc->freq = 0;
             osc->amp = 0;
         }
@@ -58,7 +73,10 @@ public:
             --kernel->playingNotesCount;
 
             sp_osc_destroy(&osc);
+            sp_adsr_destroy(&fadsr);
             sp_adsr_destroy(&adsr);
+            sp_crossfade_destroy(&filterCrossFade);
+            sp_moogladder_destroy(&lowPass);
         }
 
         void add() {
@@ -96,8 +114,16 @@ public:
         {
             float originalFrequency = osc->freq;
 
+          const float filterCutoffFreq = kernel->cutoffFrequency;
+          const float filterCutoffIntensity = kernel->cutoffIntensity;
+//          const float filterCutoffIntensity = std::min(kernel->cutoffIntensity, filterCutoffFreq);
+//          const float range = filterCutoffFreq - filterCutoffIntensity;
+
+            filterCrossFade->pos = 1.0;
+          lowPass->res = 0.1;
+
             osc->freq *= powf(2, kernel->pitchBend / 12.0);
-            osc->freq = clamp(osc->freq, 0.0f, 22050.0f);
+            osc->freq = clamp(osc->freq, 2.0f, 22050.0f);
             float bentFrequency = osc->freq;
 
             adsr->atk = (float)kernel->attackDuration;
@@ -105,6 +131,17 @@ public:
             adsr->sus = (float)kernel->sustainLevel;
             adsr->rel = (float)kernel->releaseDuration;
 
+            fadsr->atk = (float)kernel->attackDuration / filterCutoffIntensity;
+            fadsr->dec = (float)kernel->decayDuration / filterCutoffIntensity;
+            fadsr->sus = (float)kernel->sustainLevel / filterCutoffIntensity;
+            fadsr->rel = (float)kernel->releaseDuration / filterCutoffIntensity;
+
+//            fadsr->atk = std::min(std::max((float)kernel->attackDuration, 0.0005f), 2.0f);
+//            fadsr->dec = std::min(std::max((float)kernel->decayDuration, 0.005f), 2.0f);
+//            fadsr->sus = std::min(std::max((float)kernel->sustainLevel, 0.0f), 1.0f);
+//            fadsr->rel = std::min(std::max((float)kernel->releaseDuration, 0.0f), 2.0f);
+
+//          printf("%f\n", 1.0f - filter);
 
             for (int frameIndex = 0; frameIndex < frameCount; ++frameIndex) {
                 float x = 0;
@@ -113,10 +150,27 @@ public:
                 osc->freq = bentFrequency * powf(2, depth * variation);
 
                 sp_adsr_compute(kernel->sp, adsr, &internalGate, &amp);
-                sp_osc_compute(kernel->sp, osc, nil, &x);
-                *outL++ += amp * x;
-                *outR++ += amp * x;
+                sp_adsr_compute(kernel->sp, fadsr, &internalGate, &filter);
 
+                float filterEnvLFOMix = 1.0f;
+
+//                printf("%f\n", ampedFilterCutoffFreq);
+                float ampedFilterCutoffFreq = filterCutoffFreq - (filterCutoffFreq * (1.0f - filter));
+                ampedFilterCutoffFreq = std::min(std::max(ampedFilterCutoffFreq, 0.0f), 22050.0f);
+                lowPass->freq = ampedFilterCutoffFreq;
+
+                sp_osc_compute(kernel->sp, osc, nil, &x);
+
+                float oscOut = amp * x;
+
+                float filterOut = 0.0f;
+                sp_moogladder_compute(kernel->sp, lowPass, &oscOut, &filterOut);
+
+                float finalOut = 0.0f;
+                sp_crossfade_compute(kernel->sp, filterCrossFade, &oscOut, &filterOut, &finalOut);
+
+                *outL++ += finalOut;
+                *outR++ += finalOut;
             }
             osc->freq = originalFrequency;
             if (stage == stageRelease && amp < 0.00001) {

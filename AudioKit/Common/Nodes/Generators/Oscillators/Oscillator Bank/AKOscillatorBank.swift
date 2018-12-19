@@ -38,6 +38,8 @@ open class AKOscillatorBank: AKPolyphonicNode, AKComponent {
     fileprivate var pitchBendParameter: AUParameter?
     fileprivate var vibratoDepthParameter: AUParameter?
     fileprivate var vibratoRateParameter: AUParameter?
+    fileprivate var cutoffFrequencyParameter: AUParameter?
+    fileprivate var cutoffIntensityParameter: AUParameter?
 
     /// Ramp Duration represents the speed at which parameters are allowed to change
     @objc open dynamic var rampDuration: Double = AKSettings.rampDuration {
@@ -132,6 +134,34 @@ open class AKOscillatorBank: AKPolyphonicNode, AKComponent {
             }
         }
     }
+
+  @objc open dynamic var cutoffFrequency: Double = 0 {
+    willSet {
+      if cutoffFrequency != newValue {
+        if internalAU?.isSetUp ?? false {
+//          if let existingToken = token {
+//            cutoffFrequencyParameter?.setValue(Float(newValue), originator: existingToken)
+//          }
+//        } else {
+          internalAU?.setCutoffFrequency(Float(newValue))
+        }
+      }
+    }
+  }
+
+  @objc open dynamic var cutoffIntensity: Double = 0 {
+    willSet {
+      if cutoffIntensity != newValue {
+        if internalAU?.isSetUp ?? false {
+//          if let existingToken = token {
+//            cutoffIntensityParameter?.setValue(Float(newValue), originator: existingToken)
+//          }
+//        } else {
+          internalAU?.setCutoffIntensity(Float(newValue))
+        }
+      }
+    }
+  }
 
     /// Vibrato Rate in Hz
     @objc open dynamic var vibratoRate: Double = 0 {
